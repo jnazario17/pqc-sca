@@ -1,0 +1,20 @@
+
+services:
+  pqc-sca:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pqc-sca
+    working_dir: /workspace/pqc-sca
+
+    volumes:
+      - .:/workspace/pqc-sca
+
+    ports:
+      - "8000:8000"
+      - "3000:3000"
+      - "8888:8888"
+
+    init: true
+    stdin_open: true
+    tty: true
