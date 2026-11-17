@@ -32,16 +32,29 @@ def _H(data: bytes) -> bytes:
     return hashlib.sha3_256(data).digest()
 
 
-def _G(data: bytes) -> tuple[bytes, bytes]:
+def _G(data: bytes, tracer: Optional[Tracer] = None) -> tuple[bytes, bytes]:
     """G = SHA3-512 (64-byte output), split 32|32."""
+    if tracer is not None:
+        for b in data:
+            tracer.record("sha3_512_in", 0, b)
     out = hashlib.sha3_512(data).digest()
+    if tracer is not None:
+        for b in out:
+            tracer.record("sha3_512_out", 0, b)
     return out[:32], out[32:]
 
 
-def _J(data: bytes) -> bytes:
+def _J(data: bytes, tracer: Optional[Tracer] = None) -> bytes:
     """J = SHAKE-256 with 32-byte output."""
+    if tracer is not None:
+        for b in data:
+            tracer.record("shake256_in", 0, b)
     h = hashlib.shake_256(data)
-    return h.digest(32)
+    out = h.digest(32)
+    if tracer is not None:
+        for b in out:
+            tracer.record("shake256_out", 0, b)
+    return out
 
 
 def _XOF(rho: bytes, j: int, i: int) -> "hashlib._Hash":
@@ -169,13 +182,18 @@ def _mat_T_vec_mul_ntt(A_hat: list[list[list[int]]], r_hat: list[list[int]]) -> 
     return result
 
 
-def _inner_product_ntt(a_hat: list[list[int]], b_hat: list[list[int]]) -> list[int]:
+def _inner_product_ntt(a_hat: list[list[int]], b_hat: list[list[int]],
+                       tracer: Optional[Tracer] = None) -> list[int]:
     """Inner product of two NTT-domain vectors: returns a single NTT polynomial."""
     k = len(a_hat)
     acc = [0] * 256
     for i in range(k):
-        prod = multiply_ntts_kem(a_hat[i], b_hat[i])
-        acc = [(acc[c] + prod[c]) % Q_KEM for c in range(256)]
+        prod = multiply_ntts_kem(a_hat[i], b_hat[i], tracer=tracer)
+        new_acc = [(acc[c] + prod[c]) % Q_KEM for c in range(256)]
+        if tracer is not None:
+            for c in range(256):
+                tracer.record("multiply_ntts_acc", acc[c], new_acc[c])
+        acc = new_acc
     return acc
 
 
@@ -264,11 +282,21 @@ def _kpke_decrypt(dk: bytes, c: bytes,
          for i in range(k)]
     v = _decompress_poly(_byte_decode(c2, dv), dv)
 
-    s_hat = [_byte_decode(dk[i * 384:(i + 1) * 384], 12) for i in range(k)]
+    s_hat: list[list[int]] = []
+    for i in range(k):
+        dk_slice = dk[i * 384:(i + 1) * 384]
+        if tracer is not None:
+            for b in dk_slice:
+                tracer.record("bytedecode_12_in", 0, b)
+        poly = _byte_decode(dk_slice, 12)
+        if tracer is not None:
+            for coeff in poly:
+                tracer.record("bytedecode_12_out", 0, coeff)
+        s_hat.append(poly)
 
     # w = v − NTT⁻¹(ŝ · NTT(u))
     u_hat = [ntt_kem(u[i], tracer) for i in range(k)]
-    sv = intt_kem(_inner_product_ntt(s_hat, u_hat), tracer)
+    sv = intt_kem(_inner_product_ntt(s_hat, u_hat, tracer=tracer), tracer)
     w = _sub_polys(v, sv)
 
     return _byte_encode(_compress_poly(w, 1), 1)
@@ -334,11 +362,11 @@ class MLKEM:
         z       = dk[dk_pke_len + self.ek_size + 32: dk_pke_len + self.ek_size + 64]
 
         m_prime = _kpke_decrypt(dk_pke, c, self.k, self.du, self.dv, tracer)
-        K_prime, r_prime = _G(m_prime + h)
-        K_bar   = _J(z + c)
+        K_prime, r_prime = _G(m_prime + h, tracer=tracer)
+        K_bar   = _J(z + c, tracer=tracer)
 
         c_prime = _kpke_encrypt(ek, m_prime, r_prime, self.k, self.eta1, self.eta2,
-                                self.du, self.dv, tracer)
+                                self.du, self.dv)
 
         # Constant-time select (for Python simulation purposes, branching is fine)
         return K_prime if c == c_prime else K_bar

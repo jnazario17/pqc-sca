@@ -13,6 +13,8 @@ Endpoints:
 """
 
 from __future__ import annotations
+import os
+import json
 import numpy as np
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +22,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 from leakage.simulator import TraceSimulator
+from leakage.ranking import LeakageRankingAnalyzer
 from attacks.cpa import CPA
 from attacks.tvla import TVLA
 from attacks.metrics import compute_metrics
@@ -50,6 +53,7 @@ _state: dict = {
     "metrics":     None,
     "report":      None,
     "params":      None,
+    "ranking":     None,
 }
 
 
@@ -191,6 +195,36 @@ def get_report() -> dict:
     r = dict(report)
     r.pop("traces_preview", None)
     return r
+
+
+@app.get("/ranking")
+def get_ranking(algorithm: str = "ML_KEM_768") -> dict:
+    """Return leakage ranking for ML-KEM-768 secret-dependent intermediates."""
+    if _state.get("ranking") is not None:
+        return _state["ranking"]
+
+    # Try loading cached file from disk
+    cur_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    json_path = os.path.join(cur_dir, "leakage_ranking.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                _state["ranking"] = json.load(f)
+                return _state["ranking"]
+        except Exception:
+            pass
+
+    # Compute on the fly if not yet cached
+    analyzer = LeakageRankingAnalyzer(
+        algorithm=algorithm,
+        model_name="hamming_weight",
+        n_traces=DEFAULT_N_TRACES,
+        snr_db=DEFAULT_SNR_DB,
+        seed=42,
+    )
+    res = analyzer.run()
+    _state["ranking"] = res
+    return res
 
 
 # ─── Helper ───────────────────────────────────────────────────────────────────

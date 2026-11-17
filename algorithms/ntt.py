@@ -138,7 +138,11 @@ def intt_kem(f: list[int], tracer: Optional[Tracer] = None) -> list[int]:
                 f[j] = new_j
                 f[j + length] = new_ji
         length <<= 1
-    return [(_INV128_KEM * x) % Q_KEM for x in f]
+    res = [(_INV128_KEM * x) % Q_KEM for x in f]
+    if tracer is not None:
+        for j, sv in enumerate(res):
+            tracer.record("kem_intt_sv", f[j], sv)
+    return res
 
 
 def multiply_ntts_kem(f_hat: list[int], g_hat: list[int],
@@ -152,7 +156,8 @@ def multiply_ntts_kem(f_hat: list[int], g_hat: list[int],
         h[2 * i]     = (a0 * b0 + a1 * b1 * gamma) % Q_KEM
         h[2 * i + 1] = (a0 * b1 + a1 * b0) % Q_KEM
         if tracer is not None:
-            tracer.record("kem_basemul", a0, h[2 * i])
+            tracer.record("multiply_ntts_prod", a0, h[2 * i])
+            tracer.record("multiply_ntts_prod", a1, h[2 * i + 1])
     return h
 
 

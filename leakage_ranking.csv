@@ -1,0 +1,6 @@
+tvla_rank,cpa_rank,intermediate,location,total_samples,max_abs_t,n_leaking_samples,leaking_pct,mean_abs_t,peak_cpa_corr,mean_cpa_corr,ttd
+1,2,MultiplyNTTs,_inner_product_ntt,1536,79.74,1303,84.8,18.52,0.9959,0.9943,50
+2,1,ByteDecode_12,_kpke_decrypt,1920,73.26,1650,85.9,17.67,0.9962,0.9926,50
+3,5,SHA3-512,decaps_internal: _G,128,67.35,90,70.3,16.63,0.9939,0.9925,50
+4,3,NTT^-1,_kpke_decrypt: intt_kem,1152,66.37,989,85.9,18.33,0.9959,0.9943,50
+5,4,SHAKE256,decaps_internal: _J,1152,64.47,837,72.7,16.81,0.9942,0.9925,50

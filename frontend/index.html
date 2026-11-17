@@ -132,6 +132,27 @@
       border: 2px solid rgba(13,17,23,0.25); border-top-color: #0d1117;
       border-radius: 50%; animation: spin 0.65s linear infinite;
     }
+
+    /* Leakage Ranking tab styles */
+    .rank-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem; flex-wrap: wrap; gap: 0.5rem; }
+    .rank-sub-toggles { display: flex; gap: 0.4rem; align-items: center; }
+    .rank-pill { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.68rem; font-weight: 600; text-transform: uppercase; }
+    .rank-pill-critical { background: rgba(248,81,73,0.18); color: var(--red); border: 1px solid rgba(248,81,73,0.35); }
+    .rank-pill-high { background: rgba(210,153,34,0.18); color: var(--orange); border: 1px solid rgba(210,153,34,0.35); }
+    .rank-badge { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; border-radius: 50%; font-size: 0.72rem; font-weight: 700; background: var(--border); color: var(--text); }
+    .rank-badge-1 { background: rgba(210,153,34,0.25); color: #f2cc60; border: 1px solid #d29922; }
+    .rank-badge-2 { background: rgba(88,166,255,0.2); color: var(--accent); border: 1px solid rgba(88,166,255,0.4); }
+    .rank-badge-3 { background: rgba(188,140,255,0.2); color: var(--purple); border: 1px solid rgba(188,140,255,0.4); }
+    .highlight-card { background: var(--surf); border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem 0.85rem; flex: 1; min-width: 170px; }
+    .highlight-cards { display: flex; gap: 0.6rem; margin-bottom: 0.9rem; flex-wrap: wrap; }
+    .highlight-val { font-size: 1.15rem; font-weight: 700; }
+    .highlight-lbl { font-size: 0.68rem; color: var(--muted); margin-top: 0.2rem; }
+    .rank-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: 0.4rem; }
+    .rank-table th { text-align: left; padding: 0.45rem 0.6rem; color: var(--muted); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid var(--border); font-weight: 500; }
+    .rank-table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); }
+    .rank-table tr:hover td { background: rgba(255,255,255,0.02); }
+    .bar-bg { width: 70px; height: 6px; background: var(--border); border-radius: 3px; display: inline-block; vertical-align: middle; margin-left: 6px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; }
   </style>
 </head>
 <body>
@@ -170,16 +191,32 @@ function Slider({ label, value, min, max, step, onChange, fmt }) {
 }
 
 function App() {
-  const [algo,     setAlgo]     = useState("ML_KEM_512");
-  const [model,    setModel]    = useState("physics");
+  const [algo,     setAlgo]     = useState("ML_KEM_768");
+  const [model,    setModel]    = useState("hamming_weight");
   const [nTraces,  setNTraces]  = useState(500);
   const [snrDb,    setSnrDb]    = useState(20);
   const [loading,  setLoading]  = useState(false);
   const [progress, setProgress] = useState(0);
   const [status,   setStatus]   = useState(null);
-  const [tab,      setTab]      = useState("traces");
+  const [tab,      setTab]      = useState("ranking");
   const [data,     setData]     = useState(null);
+  const [ranking,  setRanking]  = useState(null);
+  const [rankSort, setRankSort] = useState("tvla");
+  const [rankView, setRankView] = useState("intermediates");
   const timer = useRef(null);
+
+  const fetchRanking = useCallback(async () => {
+    try {
+      const r = await fetch(`${API}/ranking?algorithm=ML_KEM_768`).then(res => res.json());
+      setRanking(r);
+    } catch (e) {
+      console.warn("Could not fetch ranking:", e);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    fetchRanking();
+  }, [fetchRanking]);
 
   const startProgress = () => {
     let p = 4;
@@ -287,55 +324,196 @@ function App() {
         </div>
 
         <div className="main">
-          {!data && (
+          {(!data && tab !== "ranking") && (
             <div className="empty-state">
               Pick an algorithm and model on the left, then hit Run.
             </div>
           )}
 
-          {data && (
+          {(data || tab === "ranking") && (
             <>
-              <div className="metrics-row">
-                <div className="mc">
-                  <div className="v c-a">{cpa?.peak_correlation?.toFixed(3)}</div>
-                  <div className="l">CPA peak |ρ|</div>
-                </div>
-                <div className="mc">
-                  <div className="v c-p">
-                    0x{(cpa?.recovered_key ?? 0).toString(16).padStart(2,"0").toUpperCase()}
+              {data && (
+                <div className="metrics-row">
+                  <div className="mc">
+                    <div className="v c-a">{cpa?.peak_correlation?.toFixed(3)}</div>
+                    <div className="l">CPA peak |ρ|</div>
                   </div>
-                  <div className="l">recovered byte</div>
-                </div>
-                <div className="mc mc-wide">
-                  <div>
-                    <div className="v" style={{color: tvla?.leakage_detected ? "var(--red)" : "var(--green)"}}>
-                      {tvla?.max_t?.toFixed(1)}
+                  <div className="mc">
+                    <div className="v c-p">
+                      0x{(cpa?.recovered_key ?? 0).toString(16).padStart(2,"0").toUpperCase()}
                     </div>
-                    <div className="l">TVLA max|t| (threshold 4.5)</div>
+                    <div className="l">recovered byte</div>
                   </div>
-                  <div className="sep" />
-                  <div>
-                    <div className="v c-o">{tvla?.n_leaking_samples?.toLocaleString()}</div>
-                    <div className="l">leaking samples</div>
+                  <div className="mc mc-wide">
+                    <div>
+                      <div className="v" style={{color: tvla?.leakage_detected ? "var(--red)" : "var(--green)"}}>
+                        {tvla?.max_t?.toFixed(1)}
+                      </div>
+                      <div className="l">TVLA max|t| (threshold 4.5)</div>
+                    </div>
+                    <div className="sep" />
+                    <div>
+                      <div className="v c-o">{tvla?.n_leaking_samples?.toLocaleString()}</div>
+                      <div className="l">leaking samples</div>
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className="tab-card">
                 <div className="tabs">
-                  {[["traces","Traces"],["cpa","CPA"],["tvla","TVLA"],["countermeasures","Mitigations"]].map(([id, lbl]) => (
+                  {[["ranking","Leakage Ranking"],["traces","Traces"],["cpa","CPA"],["tvla","TVLA"],["countermeasures","Mitigations"]].map(([id, lbl]) => (
                     <div key={id} className={`tab${tab===id?" active":""}`} onClick={() => setTab(id)}>{lbl}</div>
                   ))}
                 </div>
 
                 <div className="tab-body">
+                  {tab === "ranking" && (
+                    <div>
+                      <div className="highlight-cards">
+                        <div className="highlight-card">
+                          <div className="highlight-val c-r">MultiplyNTTs (79.7)</div>
+                          <div className="highlight-lbl">Peak TVLA Max |t| (Inner Product)</div>
+                        </div>
+                        <div className="highlight-card">
+                          <div className="highlight-val c-a">ByteDecode_12 (0.9962)</div>
+                          <div className="highlight-lbl">Peak CPA Correlation |ρ|</div>
+                        </div>
+                        <div className="highlight-card">
+                          <div className="highlight-val c-g">50 Traces</div>
+                          <div className="highlight-lbl">Traces to Disclosure (TTD)</div>
+                        </div>
+                        <div className="highlight-card">
+                          <div className="highlight-val c-p">ML-KEM-768</div>
+                          <div className="highlight-lbl">Target (HW Model @ 20dB)</div>
+                        </div>
+                      </div>
+
+                      <div className="rank-controls">
+                        <div className="rank-sub-toggles">
+                          <span style={{fontSize:"0.72rem", color:"var(--muted)", marginRight:"0.2rem"}}>View:</span>
+                          <button className={`tbtn${rankView==="intermediates"?" active":""}`} onClick={()=>setRankView("intermediates")}>
+                            5 Intermediates
+                          </button>
+                          <button className={`tbtn${rankView==="variables"?" active":""}`} onClick={()=>setRankView("variables")}>
+                            10 Variables
+                          </button>
+                        </div>
+
+                        <div className="rank-sub-toggles">
+                          <span style={{fontSize:"0.72rem", color:"var(--muted)", marginRight:"0.2rem"}}>Rank by:</span>
+                          <button className={`tbtn${rankSort==="tvla"?" active":""}`} onClick={()=>setRankSort("tvla")}>
+                            TVLA Max |t| (desc)
+                          </button>
+                          <button className={`tbtn${rankSort==="cpa"?" active":""}`} onClick={()=>setRankSort("cpa")}>
+                            CPA Peak |ρ| (desc)
+                          </button>
+                        </div>
+                      </div>
+
+                      {ranking ? (
+                        rankView === "intermediates" ? (
+                          <table className="rank-table">
+                            <thead>
+                              <tr>
+                                <th>Rank</th>
+                                <th>Intermediate</th>
+                                <th>Location</th>
+                                <th>Max |t|</th>
+                                <th>Leaking Samples</th>
+                                <th>Peak |ρ|</th>
+                                <th>Mean |ρ|</th>
+                                <th>TTD</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(rankSort === "tvla" ? ranking.intermediates_by_tvla : ranking.intermediates_by_cpa).map((item, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    <span className={`rank-badge rank-badge-${idx+1}`}>#{idx+1}</span>
+                                  </td>
+                                  <td style={{fontWeight:600, color:"var(--text)"}}>{item.intermediate}</td>
+                                  <td><code style={{color:"var(--accent)", fontSize:"0.75rem"}}>{item.location}</code></td>
+                                  <td>
+                                    <span style={{color: item.max_t >= 4.5 ? "var(--red)" : "var(--green)", fontWeight:600}}>
+                                      {item.max_t.toFixed(2)}
+                                    </span>
+                                    <span className="bar-bg">
+                                      <span className="bar-fill" style={{width: `${Math.min(100, (item.max_t/85)*100)}%`, background: "var(--red)"}} />
+                                    </span>
+                                  </td>
+                                  <td>{item.n_leaking} / {item.total_samples} ({item.leaking_pct}%)</td>
+                                  <td>
+                                    <span style={{color:"var(--accent)", fontWeight:600}}>{item.peak_corr.toFixed(4)}</span>
+                                    <span className="bar-bg">
+                                      <span className="bar-fill" style={{width: `${item.peak_corr * 100}%`, background: "var(--accent)"}} />
+                                    </span>
+                                  </td>
+                                  <td>{item.mean_corr.toFixed(4)}</td>
+                                  <td><span style={{color:"var(--green)", fontWeight:600}}>{item.ttd}</span></td>
+                                  <td><span className="rank-pill rank-pill-critical">CRITICAL</span></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <table className="rank-table">
+                            <thead>
+                              <tr>
+                                <th>Rank</th>
+                                <th>Variable</th>
+                                <th>Intermediate</th>
+                                <th>Role &amp; Data Type</th>
+                                <th>Samples</th>
+                                <th>Max |t|</th>
+                                <th>Peak |ρ|</th>
+                                <th>TTD</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(rankSort === "tvla" ? ranking.variables_by_tvla : ranking.variables_by_cpa).map((item, idx) => (
+                                <tr key={idx}>
+                                  <td>
+                                    <span className={`rank-badge rank-badge-${idx+1}`}>#{idx+1}</span>
+                                  </td>
+                                  <td><code style={{color:"var(--purple)", fontWeight:600}}>{item.variable}</code></td>
+                                  <td style={{fontWeight:500}}>{item.intermediate}</td>
+                                  <td style={{color:"var(--muted)", fontSize:"0.72rem"}}>{item.role}</td>
+                                  <td>{item.samples}</td>
+                                  <td style={{color: item.max_t >= 4.5 ? "var(--red)" : "var(--green)", fontWeight:600}}>
+                                    {item.max_t.toFixed(2)}
+                                  </td>
+                                  <td style={{color:"var(--accent)", fontWeight:600}}>{item.peak_corr.toFixed(4)}</td>
+                                  <td><span style={{color:"var(--green)", fontWeight:600}}>{item.ttd}</span></td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )
+                      ) : (
+                        <div style={{color:"var(--muted)", padding:"1rem", textAlign:"center"}}>Loading ranking data...</div>
+                      )}
+
+                      <div style={{marginTop:"1.2rem", padding:"0.8rem", background:"var(--surf)", borderRadius:"6px", border:"1px solid var(--border)", fontSize:"0.75rem", color:"var(--muted)", lineHeight:1.6}}>
+                        <strong style={{color:"var(--text)"}}>Architectural Findings:</strong>
+                        <ul style={{marginLeft:"1.2rem", marginTop:"0.4rem"}}>
+                          <li><strong style={{color:"var(--text)"}}>ByteDecode_12 (Peak |ρ| = 0.9962):</strong> Translates raw secret key bytes <code style={{color:"var(--accent)"}}>dk</code> directly into polynomial coefficients <code style={{color:"var(--accent)"}}>s_hat</code> with zero diffusion. It exhibits the strongest single-value CPA correlation.</li>
+                          <li><strong style={{color:"var(--text)"}}>MultiplyNTTs (Max |t| = 79.74):</strong> Computes base multiplications <code style={{color:"var(--accent)"}}>prod</code> and accumulators <code style={{color:"var(--accent)"}}>acc</code>. Cross-terms between secret polynomial <code style={{color:"var(--accent)"}}>s_hat</code> and ciphertext <code style={{color:"var(--accent)"}}>u_hat</code> generate the highest aggregate Welch t-statistic distinction.</li>
+                          <li><strong style={{color:"var(--text)"}}>NTT^-1 (Max |t| = 66.37):</strong> Inverts the accumulated product into polynomial domain <code style={{color:"var(--accent)"}}>sv</code> across 7 Cooley-Tukey butterfly layers with 85.9% leaking samples.</li>
+                          <li><strong style={{color:"var(--text)"}}>SHA3-512 &amp; SHAKE256:</strong> Absorb decrypted message <code style={{color:"var(--accent)"}}>m'</code> and rejection secret <code style={{color:"var(--accent)"}}>z</code>, exhibiting intense, localized byte-level leakage spikes (|t| &gt; 60).</li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+
                   {tab === "traces" && (
                     <>
-                      {data.traces?.plot_png
+                      {data?.traces?.plot_png
                         ? <img className="plot-img" src={`data:image/png;base64,${data.traces.plot_png}`} alt="Power traces" />
-                        : <p style={{color:"var(--muted)"}}>No plot.</p>}
+                        : <p style={{color:"var(--muted)"}}>No plot. Hit Run on the left.</p>}
                       <p className="plot-note">
-                        {data.traces?.n} traces &times; {data.traces?.T?.toLocaleString()} samples.
+                        {data?.traces?.n} traces &times; {data?.traces?.T?.toLocaleString()} samples.
                         The rightmost third (<code style={{color:"var(--accent)"}}>kem_intt</code>) is secret-dependent.
                       </p>
                     </>
@@ -343,9 +521,9 @@ function App() {
 
                   {tab === "cpa" && (
                     <>
-                      {data.attack?.cpa?.plot_png
+                      {data?.attack?.cpa?.plot_png
                         ? <img className="plot-img" src={`data:image/png;base64,${data.attack.cpa.plot_png}`} alt="CPA" />
-                        : <p style={{color:"var(--muted)"}}>No plot.</p>}
+                        : <p style={{color:"var(--muted)"}}>No plot. Hit Run on the left.</p>}
                       <p className="plot-note">Pearson correlation vs time, all 256 candidates. Brightest peak = recovered byte.</p>
                       <table className="key-table">
                         <thead><tr><th>#</th><th>Guess</th><th>|ρ|</th></tr></thead>
@@ -364,9 +542,9 @@ function App() {
 
                   {tab === "tvla" && (
                     <>
-                      {data.attack?.tvla?.plot_png
+                      {data?.attack?.tvla?.plot_png
                         ? <img className="plot-img" src={`data:image/png;base64,${data.attack.tvla.plot_png}`} alt="TVLA" />
-                        : <p style={{color:"var(--muted)"}}>No plot.</p>}
+                        : <p style={{color:"var(--muted)"}}>No plot. Hit Run on the left.</p>}
                       <p className="plot-note">
                         Welch t-statistic per sample. Dashed line = ±4.5.
                         {tvla?.leakage_detected
